@@ -476,46 +476,59 @@ def calculate_perplexity(model, sentences):
     return perplexity
 
 
-# שומר את תוצאות סעיפים 3.2, 3.3, 3.4 בקבצים
-def process_masked_sentences(committee_lm, plenary_lm, output_dir):
-    # 3.2 – בוחרים 10 משפטים רנדומליים מה-committee
-    original_sentences = pick_ten_sentences(committee_lm)
+def process_masked_sentences(full_lm, no_punct_lm, output_dir):
+    # 3.2 – select 10 random sentences (with ≥5 tokens)
+    original_sentences = pick_ten_sentences(full_lm)
 
-    # שומרים את המשפטים המקוריים
+    # Save original sentences
     with open(os.path.join(output_dir, "original_sampled_sents.txt"), "w", encoding="utf-8") as f:
         for sentence in original_sentences:
-            f.write(f"{sentence}\n")
+            f.write(sentence + "\n")
 
-    # ממסכים 10% מהטוקנים
-    masked_sentences, positions = mask_tokens_in_sentences(original_sentences, 10)
+    # Mask 10% of tokens
+    masked_sentences, _ = mask_tokens_in_sentences(original_sentences, 10)
 
-    # שומרים את המשפטים הממוסכים
+    # Save masked sentences
     with open(os.path.join(output_dir, "masked_sampled_sents.txt"), "w", encoding="utf-8") as f:
         for sentence in masked_sentences:
-            f.write(f"{sentence}\n")
+            f.write(sentence + "\n")
 
-    # 3.3 – השלמה + חישוב הסתברויות
+    # 3.3 – completion + probability evaluation
     with open(os.path.join(output_dir, "sampled_sents_results.txt"), "w", encoding="utf-8") as f:
         for original, masked in zip(original_sentences, masked_sentences):
 
-            # משלים בעזרת מודל המליאה
-            plenary_completed, plenary_tokens = complete_masked_sentence(plenary_lm, masked)
+            # Complete using FULL LM
+            full_sentence, full_tokens = complete_masked_sentence(full_lm, masked)
 
-            plenary_prob_in_plenary = round(plenary_lm.calculate_prob_of_sentence(plenary_completed), 2)
-            plenary_prob_in_committee = round(committee_lm.calculate_prob_of_sentence(plenary_completed), 2)
+            # Complete using NO-PUNCT LM
+            no_punct_sentence, no_punct_tokens = complete_masked_sentence(no_punct_lm, masked)
 
+            # Four required probabilities
+            p_full_in_full = round(full_lm.calculate_prob_of_sentence(full_sentence), 2)
+            p_full_in_no   = round(no_punct_lm.calculate_prob_of_sentence(full_sentence), 2)
+
+            p_no_in_full   = round(full_lm.calculate_prob_of_sentence(no_punct_sentence), 2)
+            p_no_in_no     = round(no_punct_lm.calculate_prob_of_sentence(no_punct_sentence), 2)
+
+            # Write to file
             f.write(f"original_sentence: {original}\n")
             f.write(f"masked_sentence: {masked}\n")
-            f.write(f"plenary_sentence: {plenary_completed}\n")
-            f.write(f"plenary_tokens: {', '.join(plenary_tokens)}\n")
-            f.write(f"probability of plenary sentence in plenary corpus: {plenary_prob_in_plenary}\n")
-            f.write(f"probability of plenary sentence in committee corpus: {plenary_prob_in_committee}\n\n")
 
-    # 3.4 – perplexity של מודל המליאה על המשפטים המקוריים (committee)
+            f.write(f"full_sentence: {full_sentence}\n")
+            f.write(f"full_tokens: {', '.join(full_tokens)}\n")
+
+            f.write(f"no_punct_sentence: {no_punct_sentence}\n")
+            f.write(f"no_punct_tokens: {', '.join(no_punct_tokens)}\n")
+
+            f.write(f"probability of full sentence in full corpus: {p_full_in_full}\n")
+            f.write(f"probability of full sentence in no_punct corpus: {p_full_in_no}\n")
+            f.write(f"probability of no_punct sentence in full corpus: {p_no_in_full}\n")
+            f.write(f"probability of no_punct sentence in no_punct corpus: {p_no_in_no}\n\n")
+
+    # 3.4 – Compute perplexity of FULL LM on original sentences
     with open(os.path.join(output_dir, "perplexity_result.txt"), "w", encoding="utf-8") as f:
-        perplexity = calculate_perplexity(plenary_lm, original_sentences)
+        perplexity = calculate_perplexity(full_lm, original_sentences)
         f.write(f"{perplexity:.2f}\n")
-
 
 if __name__ == "__main__":
     try:
@@ -553,10 +566,11 @@ if __name__ == "__main__":
         # נשתמש במודל "committee_lm" = lm_full, ו-"plenary_lm" = lm_full גם כן
         # (אם תרצה באמת להפריד לוועדה/מליאה, נוסיף סינון לפי protocol_type)
         print("Processing masked sentences and perplexity...")
-        committee_lm = lm_full
-        plenary_lm = lm_full
 
-        process_masked_sentences(committee_lm, plenary_lm, output_dir)
+        # full_lm  = lm_full        # מודל עם פיסוק
+        # no_punct_lm = lm_no_punct # מודל בלי פיסוק
+
+        process_masked_sentences(lm_full, lm_no_punct, output_dir)
 
         print("Done. All outputs written to:", output_dir)
 
